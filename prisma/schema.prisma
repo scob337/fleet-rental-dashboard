@@ -1,0 +1,478 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// User model with role-based access control
+model User {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  email     String   @unique
+  password  String
+  name      String
+  phone     String?
+  role      UserRole @default(OPERATOR)
+  avatar    String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  vehicles   Vehicle[]
+  expenses   Expense[]
+  revenues   Revenue[]
+  customers  Customer[]
+  contracts  Contract[]
+  driverNotes DriverNote[]
+
+  @@map("users")
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  ACCOUNTANT
+  OPERATOR
+}
+
+// Vehicle model for fleet management
+model Vehicle {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  plateNumber   String   @unique
+  vin           String?  @unique
+  brand         String
+  model         String
+  year          Int
+  color         String?
+  type          VehicleType
+  status        VehicleStatus @default(AVAILABLE)
+  mileage       Int      @default(0)
+  fuelType      String?
+  fuelCapacity  Float?
+  purchaseDate  DateTime?
+  purchasePrice Float?
+  currentValue  Float?
+  location      String?
+  latitude      Float?
+  longitude     Float?
+  dailyTrips    Int?      @default(0)
+  monthlyRevenue Float?   @default(0)
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  userId        String   @db.ObjectId
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  driver        Driver?  @relation("VehicleDriver")
+  containers    VehicleContainer[]
+  expenses      VehicleExpense[]
+  maintenances  Maintenance[]
+  tripLogs      TripLog[]
+
+  @@map("vehicles")
+}
+
+enum VehicleType {
+  CAR
+  VAN
+  TRUCK
+  BUS
+  CONTAINER_TRUCK
+}
+
+enum VehicleStatus {
+  AVAILABLE
+  RENTED
+  MAINTENANCE
+  DAMAGED
+  RETIRED
+}
+
+// Container model for rental tracking
+model Container {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  containerCode String   @unique
+  type          String   // 20ft, 40ft, etc
+  status        ContainerStatus @default(AVAILABLE)
+  currentLocation String?
+  latitude      Float?
+  longitude     Float?
+  purchaseDate  DateTime?
+  purchasePrice Float?
+  currentValue  Float?
+  condition     String?  // Good, Fair, Poor
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  vehicles      VehicleContainer[]
+  rentals       ContainerRental[]
+  expenses      ContainerExpense[]
+
+  @@map("containers")
+}
+
+enum ContainerStatus {
+  AVAILABLE
+  RENTED
+  MAINTENANCE
+  DAMAGED
+  RETIRED
+}
+
+// Junction table for Vehicle-Container relationship
+model VehicleContainer {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  vehicleId   String   @db.ObjectId
+  containerId String   @db.ObjectId
+  quantity    Int      @default(1)
+  
+  vehicle     Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  container   Container @relation(fields: [containerId], references: [id], onDelete: Cascade)
+
+  @@unique([vehicleId, containerId])
+  @@map("vehicle_containers")
+}
+
+// Driver model
+model Driver {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  licenseNumber String   @unique
+  name          String
+  phone         String?
+  email         String?
+  licenseClass  String?  // A, B, C, D, etc
+  licenseExpiry DateTime?
+  experience    Int?     // Years of experience
+  status        DriverStatus @default(ACTIVE)
+  dailyTrips    Int?     @default(0)
+  monthlyRevenue Float?  @default(0)
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  vehicleId     String?  @unique @db.ObjectId
+  vehicle       Vehicle? @relation("VehicleDriver", fields: [vehicleId], references: [id], onDelete: SetNull)
+  driverNotes   DriverNote[]
+  tripLogs      TripLog[]
+
+  @@map("drivers")
+}
+
+enum DriverStatus {
+  ACTIVE
+  INACTIVE
+  ON_LEAVE
+  TERMINATED
+}
+
+// Driver notes/performance tracking
+model DriverNote {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  driverId  String   @db.ObjectId
+  userId    String   @db.ObjectId
+  note      String
+  rating    Int?     // 1-5 rating
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  driver    Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("driver_notes")
+}
+
+// Trip/Journey logs
+model TripLog {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  vehicleId     String   @db.ObjectId
+  driverId      String   @db.ObjectId
+  contractId    String?  @db.ObjectId
+  startLocation String
+  endLocation   String
+  startDate     DateTime
+  endDate       DateTime
+  distance      Float?
+  startMileage  Int?
+  endMileage    Int?
+  fuelUsed      Float?
+  cost          Float?
+  status        String   @default("COMPLETED")
+  notes         String?
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  vehicle       Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  driver        Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  contract      Contract? @relation(fields: [contractId], references: [id], onDelete: SetNull)
+
+  @@map("trip_logs")
+}
+
+// Customer model
+model Customer {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  name          String
+  email         String?  @unique
+  phone         String?
+  company       String?
+  address       String?
+  city          String?
+  country       String?
+  taxId         String?
+  paymentMethod String?  // CASH, CARD, BANK_TRANSFER
+  status        CustomerStatus @default(ACTIVE)
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  userId        String   @db.ObjectId
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contracts     Contract[]
+  invoices      Invoice[]
+  containerRentals ContainerRental[]
+
+  @@map("customers")
+}
+
+enum CustomerStatus {
+  ACTIVE
+  INACTIVE
+  BLACKLISTED
+}
+
+// Contract/Agreement model
+model Contract {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  contractNumber String @unique
+  customerId    String   @db.ObjectId
+  userId        String   @db.ObjectId
+  vehicleIds    String[]  @db.ObjectId // Array of vehicle IDs
+  containerRentalIds String[] @db.ObjectId // Array of container rental IDs
+  startDate     DateTime
+  endDate       DateTime
+  totalAmount   Float
+  status        ContractStatus @default(ACTIVE)
+  notes         String?
+  attachments   String[] // URLs or file paths
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  customer      Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tripLogs      TripLog[]
+  invoices      Invoice[]
+  payments      Payment[]
+
+  @@map("contracts")
+}
+
+enum ContractStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+// Container rental model
+model ContainerRental {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  containerId String   @db.ObjectId
+  customerId  String   @db.ObjectId
+  rentStartDate DateTime
+  rentEndDate DateTime
+  dailyRate   Float
+  totalDays   Int
+  totalCost   Float
+  status      RentalStatus @default(ACTIVE)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  container   Container  @relation(fields: [containerId], references: [id], onDelete: Cascade)
+  customer    Customer   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@map("container_rentals")
+}
+
+enum RentalStatus {
+  PENDING
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+// Revenue tracking
+model Revenue {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String   @db.ObjectId
+  source      String   // Vehicle Rental, Container Rental, etc
+  amount      Float
+  currency    String   @default("USD")
+  date        DateTime
+  description String?
+  invoiceId   String?  @db.ObjectId
+  status      String   @default("RECEIVED")
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("revenues")
+}
+
+// Expense tracking
+model Expense {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String   @db.ObjectId
+  category    String   // Fuel, Maintenance, Insurance, etc
+  amount      Float
+  currency    String   @default("USD")
+  date        DateTime
+  description String?
+  receipt     String?  // File URL
+  status      String   @default("PENDING")
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("expenses")
+}
+
+// Vehicle-specific expenses
+model VehicleExpense {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  vehicleId   String   @db.ObjectId
+  category    String   // Fuel, Maintenance, Insurance, etc
+  amount      Float
+  currency    String   @default("USD")
+  date        DateTime
+  description String?
+  receipt     String?  // File URL
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  vehicle     Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@map("vehicle_expenses")
+}
+
+// Container-specific expenses
+model ContainerExpense {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  containerId String   @db.ObjectId
+  category    String   // Maintenance, Repair, etc
+  amount      Float
+  currency    String   @default("USD")
+  date        DateTime
+  description String?
+  receipt     String?  // File URL
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  container   Container @relation(fields: [containerId], references: [id], onDelete: Cascade)
+
+  @@map("container_expenses")
+}
+
+// Maintenance tracking
+model Maintenance {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  vehicleId   String   @db.ObjectId
+  type        String   // Regular, Repair, Emergency
+  description String
+  cost        Float
+  date        DateTime
+  nextDue     DateTime?
+  status      String   @default("COMPLETED")
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  vehicle     Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@map("maintenances")
+}
+
+// Invoice model
+model Invoice {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  invoiceNumber String @unique
+  customerId  String   @db.ObjectId
+  contractId  String   @db.ObjectId
+  totalAmount Float
+  paidAmount  Float    @default(0)
+  currency    String   @default("USD")
+  dueDate     DateTime
+  issueDate   DateTime
+  status      InvoiceStatus @default(PENDING)
+  notes       String?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  contract    Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  @@map("invoices")
+}
+
+enum InvoiceStatus {
+  PENDING
+  PAID
+  PARTIALLY_PAID
+  OVERDUE
+  CANCELLED
+}
+
+model Payment {
+  id              String        @id @default(auto()) @map("_id") @db.ObjectId
+  contractId      String        @db.ObjectId
+  amount          Float
+  currency        String        @default("SAR")
+  paymentDate     DateTime      @default(now())
+  paymentMethod   String        // CASH, CARD, BANK_TRANSFER
+  referenceNumber String?       // Transaction ID, check number, etc
+  status          PaymentStatus @default(COMPLETED)
+  notes           String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  contract        Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  @@map("payments")
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
